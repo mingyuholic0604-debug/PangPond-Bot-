@@ -16,7 +16,6 @@ import os
 
 load_dotenv()
 
-print("DEBUG DB:", os.getenv("DATABASE_URL"))
 
 print("🚀 BOT FILE STARTED")
 
