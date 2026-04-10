@@ -757,6 +757,75 @@ async def daily_cmd(
         res = run_query(
             "SELECT enabled FROM reminder_settings WHERE user_id=%s AND command=%s",
             (user_id, "daily"),
+
+DAILY_COOLDOWN = 86400  # 24 hours
+
+@bot.tree.command(
+    name="daily",
+    description="Claim your daily rewards"
+)
+@app_commands.describe(reminder="Turn reminder on/off (optional)")
+async def daily_cmd(
+    interaction: discord.Interaction,
+    reminder: bool | None = None
+):
+
+    await interaction.response.defer()  # 🔥 FIX 1 (VERY IMPORTANT)
+
+    user_id = str(interaction.user.id)
+    now = int(time.time())
+
+    try:
+        # 🔹 Ensure user exists
+        ensure_user(user_id)
+
+        # 🔹 Cooldown check
+        remaining = get_remaining_cooldown(user_id, "daily", DAILY_COOLDOWN)
+
+        if remaining > 0:
+            hours = remaining // 3600
+            minutes = (remaining % 3600) // 60
+
+            return await interaction.followup.send(
+                f"⏱ You can claim daily again in {hours}h {minutes}m",
+                ephemeral=True
+            )
+
+        # 🎁 Rewards
+        boba = 2000
+        cakecoins = 10
+
+        # 🔹 Update balance
+        run_query("""
+            INSERT INTO users (user_id, boba, cakecoins)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id)
+            DO UPDATE SET
+                boba = users.boba + %s,
+                cakecoins = users.cakecoins + %s
+        """, (user_id, boba, cakecoins, boba, cakecoins))
+
+        await log_action(
+            user_id,
+            "daily",
+            f"+{boba} boba, +{cakecoins} cakecoins"
+        )
+
+        # 🔹 Save cooldown
+        set_cooldown(user_id, "daily", now)
+
+        # 🔔 Reminder system
+        if reminder is not None:
+            run_query("""
+                INSERT INTO reminder_settings (user_id, command, enabled)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id, command)
+                DO UPDATE SET enabled = %s
+            """, (user_id, "daily", reminder, reminder))
+
+        res = run_query(
+            "SELECT enabled FROM reminder_settings WHERE user_id=%s AND command=%s",
+            (user_id, "daily"),
             fetchone=True
         )
         enabled = res[0] if res else True
@@ -776,9 +845,7 @@ async def daily_cmd(
                 str(interaction.channel_id)
             ))
 
-# -------------------------------
-# 🎨 EMBED
-# -------------------------------
+        # 🎨 Embed
         embed = discord.Embed(
             title=f"{BUTTON} Daily Reward Claimed!",
             description=(
@@ -793,29 +860,23 @@ async def daily_cmd(
             url="https://media2.giphy.com/media/v1.Y2lkPTZjMDliOTUydmlrODh6YXlxcWI4dGhhbXl3czZpejVmZzVnOXEydDN2dmswdmM5aSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/uKKSAhC0gb5roHsy9v/giphy.gif"
         )
 
-        await interaction.response.send_message(embed=embed)
+        # 🔥 FIX 2 (use followup, NOT response)
+        await interaction.followup.send(embed=embed)
 
-# -------------------------------
-# 📜 LOGGING (NEW 🔥)
-# -------------------------------
+        # 📜 Logging
         run_query(
             "INSERT INTO logs (user_id, action, details) VALUES (%s,%s,%s)",
             (user_id, "daily", f"+{boba} boba, +{cakecoins} cakecoins")
         )
 
     except Exception as e:
-        if interaction.response.is_done():
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                f"❌ Error: {e}",
-                ephemeral=True
-            )
-        
+        print("DAILY ERROR:", e)
 
-# -------------------------------
-# /weekly
-# -------------------------------
+        await interaction.followup.send(
+            f"❌ Error: {e}",
+            ephemeral=True
+    )
+        
 WEEKLY_COOLDOWN = 604800  # 7 days
 
 @bot.tree.command(
@@ -827,6 +888,8 @@ async def weekly_cmd(
     interaction: discord.Interaction,
     reminder: bool | None = None
 ):
+
+    await interaction.response.defer()  # 🔥 FIX 1
 
     user_id = str(interaction.user.id)
     now = int(time.time())
@@ -842,7 +905,7 @@ async def weekly_cmd(
             days = remaining // 86400
             hours = (remaining % 86400) // 3600
 
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 f"⏱ You can claim weekly again in {days}d {hours}h",
                 ephemeral=True
             )
@@ -851,7 +914,7 @@ async def weekly_cmd(
         boba = 5000
         cakecoins = 50
 
-        # 🔹 Update balance (FIXED ✅)
+        # 🔹 Update balance
         run_query("""
             INSERT INTO users (user_id, boba, cakecoins)
             VALUES (%s, %s, %s)
@@ -861,12 +924,10 @@ async def weekly_cmd(
                 cakecoins = users.cakecoins + %s
         """, (user_id, boba, cakecoins, boba, cakecoins))
 
-        # 🔹 Save cooldown
+        # 🔹 Save cooldown (FIXED INDENT ✅)
         set_cooldown(user_id, "weekly", now)
 
-# -------------------------------
-# 🔔 REMINDER SYSTEM
-# -------------------------------
+        # 🔔 Reminder system
         if reminder is not None:
             run_query("""
                 INSERT INTO reminder_settings (user_id, command, enabled)
@@ -896,53 +957,31 @@ async def weekly_cmd(
                 now + WEEKLY_COOLDOWN,
                 str(interaction.channel_id)
             ))
-        await log_action(
-    user_id,
-    "weekly",
-    f"+{boba} boba, +{cakecoins} cakecoins"
-)
 
-        # -------------------------------
-        # 🎨 EMBED
-        # -------------------------------
+        # 🎨 Embed
         embed = discord.Embed(
-            title=f"{BUTTON} Weekly Reward Claimed!",
+            title="🎁 Weekly Reward Claimed!",
             description=(
                 f"You received:\n"
-                f"{BOBA} **{boba} boba**\n"
-                f"{CAKE} **{cakecoins} cakecoins**"
+                f"🧋 **{boba} boba**\n"
+                f"🍰 **{cakecoins} cakecoins**"
             ),
-            color=discord.Color.gold()
+            color=discord.Color.blue()
         )
 
-        embed.set_image(
-            url="https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyY2xhcHA5cDM1aWhkcGl5MDR1MzY1bmZuNGF6aXMxeWl0dTM0ODNjMyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/5wKuwXycuNfl0VEOgI/giphy.gif"
-        )
-
-        await interaction.response.send_message(embed=embed)
-
-# -------------------------------
-# 📜 LOGGING (NEW 🔥)
-# -------------------------------
-        run_query(
-            "INSERT INTO logs (user_id, action, details) VALUES (%s,%s,%s)",
-            (user_id, "weekly", f"+{boba} boba, +{cakecoins} cakecoins")
-        )
+        # 🔥 FIX 2 (followup)
+        await interaction.followup.send(embed=embed)
 
     except Exception as e:
-        if interaction.response.is_done():
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                f"❌ Error: {e}",
-                ephemeral=True
+        print("WEEKLY ERROR:", e)
+
+        await interaction.followup.send(
+            f"❌ Error: {e}",
+            ephemeral=True
             )
-        
-# -------------------------------
-# /bake
-# -------------------------------
+
 BAKE_COOLDOWN = 3600  # 1 hour
-        
+
 @bot.tree.command(
     name="bake",
     description="Bake to earn boba and cakecoins"
@@ -952,6 +991,8 @@ async def bake_cmd(
     interaction: discord.Interaction,
     reminder: bool | None = None
 ):
+
+    await interaction.response.defer()  # 🔥 FIX 1
 
     user_id = str(interaction.user.id)
     now = int(time.time())
@@ -967,16 +1008,16 @@ async def bake_cmd(
             hours = remaining // 3600
             minutes = (remaining % 3600) // 60
 
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 f"⏱ You can bake again in {hours}h {minutes}m",
                 ephemeral=True
             )
 
-        # 🎁 Rewards (random)
+        # 🎁 Rewards (FIXED INDENT ✅)
         boba = random.randint(200, 800)
         cakecoins = random.randint(1, 5)
 
-        # 🔹 Update balance (FIXED ✅)
+        # 🔹 Update balance
         run_query("""
             INSERT INTO users (user_id, boba, cakecoins)
             VALUES (%s, %s, %s)
@@ -989,9 +1030,7 @@ async def bake_cmd(
         # 🔹 Save cooldown
         set_cooldown(user_id, "bake", now)
 
-        # -------------------------------
-        # 🔔 REMINDER SYSTEM
-        # -------------------------------
+        # 🔔 Reminder system
         if reminder is not None:
             run_query("""
                 INSERT INTO reminder_settings (user_id, command, enabled)
@@ -1022,9 +1061,7 @@ async def bake_cmd(
                 str(interaction.channel_id)
             ))
 
-        # -------------------------------
-        # 🎨 EMBED
-        # -------------------------------
+        # 🎨 Embed (FIXED INDENT ✅)
         embed = discord.Embed(
             title=f"{CROISSANT} Baking Complete!",
             description=(
@@ -1039,29 +1076,28 @@ async def bake_cmd(
             url="https://media4.giphy.com/media/v1.Y2lkPTZjMDliOTUyZGZnMDcwM2o3Zmp6Y2tndHFweHZydTZtMmU1MzE2bHBrc201cjJlZiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LMuPuB2jQkmgX59vWX/giphy.gif"
         )
 
-        await interaction.response.send_message(embed=embed)
+        # 🔥 FIX 2 (followup)
+        await interaction.followup.send(embed=embed)
 
-# -------------------------------
-# 📜 LOGGING (NEW 🔥)
-# -------------------------------
+        # 📜 Logging
         run_query(
             "INSERT INTO logs (user_id, action, details) VALUES (%s,%s,%s)",
             (user_id, "bake", f"+{boba} boba, +{cakecoins} cakecoins")
         )
+
         await log_action(
-    user_id,
-    "bake",
-    f"+{boba} boba, +{cakecoins} cakecoins"
-)
+            user_id,
+            "bake",
+            f"+{boba} boba, +{cakecoins} cakecoins"
+        )
 
     except Exception as e:
-        if interaction.response.is_done():
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
-        else:
-            await interaction.response.send_message(
-                f"❌ Error: {e}",
-                ephemeral=True
-            )
+        print("BAKE ERROR:", e)
+
+        await interaction.followup.send(
+            f"❌ Error: {e}",
+            ephemeral=True
+        )
         
 # -------------------------------
 # /cooldown
