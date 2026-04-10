@@ -11,6 +11,13 @@ import random
 import asyncio
 import time
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+print("DEBUG DB:", os.getenv("DATABASE_URL"))
+
 print("🚀 BOT FILE STARTED")
 
 # -------------------------------
